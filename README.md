@@ -8,15 +8,15 @@ conda activate labelme2
 
 2. Install the requirement dependencies
 ```
-cd labelme
 pip install .
 pip install opencv-python
 pip install pyinstaller
 pyinstaller labelme.spec
 ```
 
-3. Execute the code
+3. Execute the code:
+
+Go to `./labelme/labelme`
 ```
-cd labelme
 python __main__.py
 ```
