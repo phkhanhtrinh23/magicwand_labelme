@@ -18,14 +18,14 @@ from qtpy import QtWidgets
 from labelme import __appname__
 from labelme import PY2
 
-from . import utils
-from labelme.config import get_config
+from labelme import utils
+from config import get_config
 from labelme.label_file import LabelFile
 from labelme.label_file import LabelFileError
 from labelme.logger import logger
 from labelme.shape import Shape
 from labelme.widgets import BrightnessContrastDialog
-from labelme.widgets import Canvas
+from widgets.canvas import Canvas
 from labelme.widgets import FileDialogPreview
 from labelme.widgets import LabelDialog
 from labelme.widgets import LabelListWidget
@@ -33,6 +33,8 @@ from labelme.widgets import LabelListWidgetItem
 from labelme.widgets import ToolBar
 from labelme.widgets import UniqueLabelQListWidget
 from labelme.widgets import ZoomWidget
+from widgets.magicwand import SelectionWindow
+import cv2
 
 # FIXME
 # - [medium] Set max zoom value to something big enough for FitWidth/Window
@@ -167,6 +169,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.zoomWidget = ZoomWidget()
         self.setAcceptDrops(True)
+
+        # self.imageMagicWand = cv2.imread(self.imagePath)
+        # print("Path:",self.imagePath)
 
         self.canvas = self.labelList.canvas = Canvas(
             epsilon=self._config["epsilon"],
@@ -333,6 +338,14 @@ class MainWindow(QtWidgets.QMainWindow):
             shortcuts["create_rectangle"],
             "objects",
             self.tr("Start drawing rectangles"),
+            enabled=False,
+        )
+        createBoxMode = action(
+            self.tr("Create Box"),
+            lambda: self.toggleDrawMode(False, createMode="box"),
+            shortcuts["create_box"],
+            "objects",
+            self.tr("Start drawing boxes"),
             enabled=False,
         )
         createCircleMode = action(
@@ -599,6 +612,7 @@ class MainWindow(QtWidgets.QMainWindow):
             createMode=createMode,
             editMode=editMode,
             createRectangleMode=createRectangleMode,
+            createBoxMode=createBoxMode,
             createCircleMode=createCircleMode,
             createLineMode=createLineMode,
             createPointMode=createPointMode,
@@ -632,7 +646,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # menu shown at right click
             menu=(
                 createMode,
-                createRectangleMode,
+                # createRectangleMode,
+                createBoxMode,
                 createCircleMode,
                 createLineMode,
                 createPointMode,
@@ -650,7 +665,8 @@ class MainWindow(QtWidgets.QMainWindow):
             onLoadActive=(
                 close,
                 createMode,
-                createRectangleMode,
+                # createRectangleMode,
+                createBoxMode,
                 createCircleMode,
                 createLineMode,
                 createPointMode,
@@ -740,6 +756,8 @@ class MainWindow(QtWidgets.QMainWindow):
             deleteFile,
             None,
             createMode,
+            # createRectangleMode,
+            createBoxMode,
             editMode,
             duplicate,
             copy,
@@ -848,6 +866,7 @@ class MainWindow(QtWidgets.QMainWindow):
         actions = (
             self.actions.createMode,
             self.actions.createRectangleMode,
+            self.actions.createBoxMode,
             self.actions.createCircleMode,
             self.actions.createLineMode,
             self.actions.createPointMode,
@@ -879,6 +898,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.actions.save.setEnabled(False)
         self.actions.createMode.setEnabled(True)
         self.actions.createRectangleMode.setEnabled(True)
+        self.actions.createBoxMode.setEnabled(True)
         self.actions.createCircleMode.setEnabled(True)
         self.actions.createLineMode.setEnabled(True)
         self.actions.createPointMode.setEnabled(True)
@@ -956,6 +976,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if edit:
             self.actions.createMode.setEnabled(True)
             self.actions.createRectangleMode.setEnabled(True)
+            self.actions.createBoxMode.setEnabled(True)
             self.actions.createCircleMode.setEnabled(True)
             self.actions.createLineMode.setEnabled(True)
             self.actions.createPointMode.setEnabled(True)
@@ -964,6 +985,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if createMode == "polygon":
                 self.actions.createMode.setEnabled(False)
                 self.actions.createRectangleMode.setEnabled(True)
+                self.actions.createBoxMode.setEnabled(True)
                 self.actions.createCircleMode.setEnabled(True)
                 self.actions.createLineMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(True)
@@ -971,6 +993,15 @@ class MainWindow(QtWidgets.QMainWindow):
             elif createMode == "rectangle":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createRectangleMode.setEnabled(False)
+                self.actions.createBoxMode.setEnabled(True)
+                self.actions.createCircleMode.setEnabled(True)
+                self.actions.createLineMode.setEnabled(True)
+                self.actions.createPointMode.setEnabled(True)
+                self.actions.createLineStripMode.setEnabled(True)
+            elif createMode == "box":
+                self.actions.createMode.setEnabled(True)
+                self.actions.createRectangleMode.setEnabled(True)
+                self.actions.createBoxMode.setEnabled(False)
                 self.actions.createCircleMode.setEnabled(True)
                 self.actions.createLineMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(True)
@@ -978,6 +1009,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif createMode == "line":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createRectangleMode.setEnabled(True)
+                self.actions.createBoxMode.setEnabled(True)
                 self.actions.createCircleMode.setEnabled(True)
                 self.actions.createLineMode.setEnabled(False)
                 self.actions.createPointMode.setEnabled(True)
@@ -985,6 +1017,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif createMode == "point":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createRectangleMode.setEnabled(True)
+                self.actions.createBoxMode.setEnabled(True)
                 self.actions.createCircleMode.setEnabled(True)
                 self.actions.createLineMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(False)
@@ -992,6 +1025,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif createMode == "circle":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createRectangleMode.setEnabled(True)
+                self.actions.createBoxMode.setEnabled(True)
                 self.actions.createCircleMode.setEnabled(False)
                 self.actions.createLineMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(True)
@@ -999,6 +1033,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif createMode == "linestrip":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createRectangleMode.setEnabled(True)
+                self.actions.createBoxMode.setEnabled(True)
                 self.actions.createCircleMode.setEnabled(True)
                 self.actions.createLineMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(True)
@@ -1218,6 +1253,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             for x, y in points:
                 shape.addPoint(QtCore.QPointF(x, y))
+                # print("Point 2:",x,y)
             shape.close()
 
             default_flags = {}
@@ -1466,6 +1502,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def loadFile(self, filename=None):
         """Load the specified file, or the last opened file if None."""
         # changing fileListWidget loads file
+        self.canvas.imageMagicWand = cv2.imread(filename)
+        self.canvas.imageSelectionWindow = SelectionWindow(self.canvas.imageMagicWand)
         if filename in self.imageList and (
             self.fileListWidget.currentRow() != self.imageList.index(filename)
         ):

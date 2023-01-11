@@ -1,3 +1,5 @@
+import math
+import random
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtWidgets
@@ -30,7 +32,7 @@ class Canvas(QtWidgets.QWidget):
     drawingPolygon = QtCore.Signal(bool)
     vertexSelected = QtCore.Signal(bool)
 
-    CREATE, EDIT = 0, 1
+    CREATE, EDIT, LABEL = 0, 1, 2
 
     # polygon, rectangle, line, or point
     _createMode = "polygon"
@@ -98,6 +100,10 @@ class Canvas(QtWidgets.QWidget):
         # Set widget options.
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.WheelFocus)
+        self.imageMagicWand = None
+        self.imageSelectionWindow = None
+        self.labeling_image = False
+        self.threshold_distance = 10
 
     def fillDrawing(self):
         return self._fill_drawing
@@ -114,6 +120,7 @@ class Canvas(QtWidgets.QWidget):
         if value not in [
             "polygon",
             "rectangle",
+            "box",
             "circle",
             "line",
             "point",
@@ -175,6 +182,9 @@ class Canvas(QtWidgets.QWidget):
     def editing(self):
         return self.mode == self.EDIT
 
+    def labeling(self):
+        return self.mode == self.LABEL
+
     def setEditing(self, value=True):
         self.mode = self.EDIT if value else self.CREATE
         if self.mode == self.EDIT:
@@ -215,7 +225,10 @@ class Canvas(QtWidgets.QWidget):
 
         # Polygon drawing.
         if self.drawing():
-            self.line.shape_type = self.createMode
+            if self.createMode == "box":
+                self.line.shape_type = "rectangle"
+            else:
+                self.line.shape_type = self.createMode
 
             self.overrideCursor(CURSOR_DRAW)
             if not self.current:
@@ -241,6 +254,9 @@ class Canvas(QtWidgets.QWidget):
                 self.line[0] = self.current[-1]
                 self.line[1] = pos
             elif self.createMode == "rectangle":
+                self.line.points = [self.current[0], pos]
+                self.line.close()
+            elif self.createMode == "box":
                 self.line.points = [self.current[0], pos]
                 self.line.close()
             elif self.createMode == "circle":
@@ -317,7 +333,7 @@ class Canvas(QtWidgets.QWidget):
                 self.setStatusTip(self.toolTip())
                 self.update()
                 break
-            elif shape.containsPoint(pos):
+            elif shape.containsPoint(pos) and self.editing():
                 if self.selectedVertex():
                     self.hShape.highlightClear()
                 self.prevhVertex = self.hVertex
@@ -331,7 +347,8 @@ class Canvas(QtWidgets.QWidget):
                 self.setStatusTip(self.toolTip())
                 self.overrideCursor(CURSOR_GRAB)
                 self.update()
-                break
+                # break
+                pass
         else:  # Nothing found, clear highlights, reset state.
             self.unHighlight()
         self.vertexSelected.emit(self.hVertex is not None)
@@ -340,6 +357,7 @@ class Canvas(QtWidgets.QWidget):
         shape = self.prevhShape
         index = self.prevhEdge
         point = self.prevMovePoint
+        # print("Point:",point)
         if shape is None or index is None or point is None:
             return
         shape.insertPoint(index, point)
@@ -360,6 +378,17 @@ class Canvas(QtWidgets.QWidget):
         self.prevhVertex = None
         self.movingShape = True  # Save changes
 
+    def check_intersection(self, start_point, end_point, check_point):
+        # a[0] = x, a[1] = y
+        if (check_point[0] >= start_point[0] and check_point[1] >= start_point[1]) and \
+            (check_point[0] <= end_point[0] and check_point[1] <= end_point[1]):
+            return True
+        return False
+    
+    def distance_between_points(self, point_1, point_2):
+        d = math.sqrt((point_2[0]-point_1[0])**2 + (point_2[1]-point_1[1])**2)
+        return d
+
     def mousePressEvent(self, ev):
         if QT5:
             pos = self.transformPos(ev.localPos())
@@ -370,14 +399,33 @@ class Canvas(QtWidgets.QWidget):
                 if self.current:
                     # Add point to existing shape.
                     if self.createMode == "polygon":
+                        # print("Current before: ", self.current.points)
+                        # print("Line before: ", self.line[0])
                         self.current.addPoint(self.line[1])
                         self.line[0] = self.current[-1]
+                        # print("Current after: ", self.current.points)
+                        # print("Line after: ", self.line[0], self.line[1])
                         if self.current.isClosed():
                             self.finalise()
                     elif self.createMode in ["rectangle", "circle", "line"]:
                         assert len(self.current.points) == 1
+                        # print("rec current points before:",self.current.points[0])
+                        # print("rec line points:",self.line.points[0])
                         self.current.points = self.line.points
+                        # print("rec current points:",self.current.points[0])
                         self.finalise()
+                    elif self.createMode == "box":
+                        assert len(self.current.points) == 1
+                        # print("current points before:",self.current.points[0])
+                        # print("line points:",self.line.points[0])
+                        self.imageSelectionWindow._reset_slidewindow()
+                        self.current.points = self.line.points
+                        # print("current points:",self.current.points[0])
+                        self.imageSelectionWindow._ix, self.imageSelectionWindow._iy = int(self.current.points[0].x()), int(self.current.points[0].y())
+                        self.imageSelectionWindow._x, self.imageSelectionWindow._y = int(self.current.points[1].x()), int(self.current.points[1].y())
+                        # self.finalise()
+                        self.labeling_image = False
+                        self.mode = self.LABEL
                     elif self.createMode == "linestrip":
                         self.current.addPoint(self.line[1])
                         self.line[0] = self.current[-1]
@@ -385,7 +433,10 @@ class Canvas(QtWidgets.QWidget):
                             self.finalise()
                 elif not self.outOfPixmap(pos):
                     # Create new shape.
-                    self.current = Shape(shape_type=self.createMode)
+                    if self.createMode == "box":
+                        self.current = Shape(shape_type="rectangle")
+                    else:
+                        self.current = Shape(shape_type=self.createMode)
                     self.current.addPoint(pos)
                     if self.createMode == "point":
                         self.finalise()
@@ -396,6 +447,81 @@ class Canvas(QtWidgets.QWidget):
                         self.setHiding()
                         self.drawingPolygon.emit(True)
                         self.update()
+            elif self.labeling():
+                start_point = (self.imageSelectionWindow._ix, self.imageSelectionWindow._iy)
+                end_point = (self.imageSelectionWindow._x, self.imageSelectionWindow._y)
+                check_point = (pos.x(), pos.y())
+                if self.createMode == "box":
+                    if self.check_intersection(start_point, end_point, check_point) == False:
+                        if self.labeling_image == False:
+                            msg = self.tr(
+                                "Please click inside the box! If you want to "
+                                "Detele the box, remember to choose Edit Polygons " 
+                                "on the left-hand side."
+                            )
+                            QtWidgets.QMessageBox.warning(
+                                self, self.tr("Attention"), msg
+                            )
+                        elif self.current:
+                            self.finalise()
+                        else:
+                            msg = self.tr(
+                                "Empty shape. Please label the shape!"
+                            )
+                            QtWidgets.QMessageBox.warning(
+                                self, self.tr("Attention"), msg
+                            )
+                        # self.setEditing()
+                    else:
+                        self.current = Shape(shape_type="polygon")
+                        if int(ev.modifiers()) == QtCore.Qt.ShiftModifier:
+                            temp = None
+                            contours = self.imageSelectionWindow._shift_key(int(pos.x()), int(pos.y()))
+                            for points in contours:
+                                if points == contours[-1]:
+                                    self.current.addPoint(points)
+                                elif temp:
+                                    point_2 = (points.x(), points.y())
+                                    if self.distance_between_points(temp, point_2) > self.threshold_distance:
+                                        self.current.addPoint(points)
+                                        temp = point_2
+                                else:
+                                    temp = (points.x(), points.y())
+                            self.current.addPoint(self.current.points[0])
+                            self.labeling_image = True
+
+                            if self.current.isClosed():
+                                # print("Close!")
+                                self.update()
+                        elif int(ev.modifiers()) == QtCore.Qt.AltModifier:
+                            if self.labeling_image == False:
+                                msg = self.tr(
+                                    "Please fill before delete."
+                                )
+                                QtWidgets.QMessageBox.warning(
+                                    self, self.tr("Attention"), msg
+                                )
+                            else:
+                                temp = None
+                                contours = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
+                                if len(contours) > 0:
+                                    for points in contours:
+                                        if points == contours[-1]:
+                                            self.current.addPoint(points)
+                                        elif temp:
+                                            point_2 = (points.x(), points.y())
+                                            if self.distance_between_points(temp, point_2) > self.threshold_distance:
+                                                self.current.addPoint(points)
+                                                temp = point_2
+                                        else:
+                                            temp = (points.x(), points.y())
+
+                                    self.current.addPoint(self.current.points[0])
+
+                                    if self.current.isClosed():
+                                        # print("Close!")
+                                        self.update()
+
             elif self.editing():
                 if self.selectedEdge():
                     self.addPointToEdge()
@@ -636,7 +762,7 @@ class Canvas(QtWidgets.QWidget):
 
         # draw crosshair
         if (
-            self._crosshair[self._createMode]
+            (self._createMode == "box" or self._crosshair[self._createMode])
             and self.drawing()
             and self.prevMovePoint
             and not self.outOfPixmap(self.prevMovePoint)
@@ -871,7 +997,7 @@ class Canvas(QtWidgets.QWidget):
         self.current.setOpen()
         if self.createMode in ["polygon", "linestrip"]:
             self.line.points = [self.current[-1], self.current[0]]
-        elif self.createMode in ["rectangle", "line", "circle"]:
+        elif self.createMode in ["rectangle", "box", "line", "circle"]:
             self.current.points = self.current.points[0:1]
         elif self.createMode == "point":
             self.current = None

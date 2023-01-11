@@ -9,10 +9,14 @@ CTRL_KEY = cv.EVENT_FLAG_CTRLKEY
 
 def _find_exterior_contours(img):
     ret = cv.findContours(img, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    # print("ret:",len(ret), np.asarray(list(ret[0])), ret[1])
+    """
+    [, contours[, hierarchy[, offset]]]
+    """
     if len(ret) == 2:
-        return ret[0]
+        return np.asarray(list(ret[0]))
     elif len(ret) == 3:
-        return ret[1]
+        return np.asarray(list(ret[1]))
     raise Exception("Check the signature for `cv.findContours()`.")
 
 def check_intersection(start_point, end_point, check_point):
@@ -30,6 +34,7 @@ class SelectionWindow:
         self.img = img
         self.img_copy = img.copy()
         self.rectangle = img
+        # print('original rec', self.rectangle.shape)
         self.draw_rec = False
         self.mask = np.zeros((h, w), dtype=np.uint8)
         self._flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
@@ -97,7 +102,9 @@ class SelectionWindow:
             self.mask = cv.bitwise_and(self.mask, floodmask)
         elif modifier == SHIFT_KEY:
             floodmask = self._floodfill(event, x, y)
+            # print("floodmask:",floodmask.shape)
             self.mask = cv.bitwise_or(self.mask, floodmask)
+            # print("self.mask:",self.mask.shape)
         elif modifier == ALT_KEY:
             floodmask = self._floodfill(event, x, y)
             self.mask = cv.bitwise_and(self.mask, cv.bitwise_not(floodmask))
@@ -110,7 +117,8 @@ class SelectionWindow:
         floodmask = None
         start_point = (self._ix, self._iy)
         end_point = (self._x, self._y)
-        check_point = (x,y)
+        check_point = (x, y)
+        # print('rec', self.rectangle.shape)
         # print("Coordinates 2:", start_point, end_point, check_point)
         if event == cv.EVENT_LBUTTONDOWN:
             if check_intersection(start_point, end_point, check_point) == True:
@@ -124,6 +132,15 @@ class SelectionWindow:
                     self.tolerance,
                     self._flood_fill_flags,
                 )
+                # print("Floodfill:",cv.floodFill(
+                #     self.rectangle,   
+                #     self._flood_mask,
+                #     (x, y),
+                #     0,
+                #     self.tolerance,
+                #     self.tolerance,
+                #     self._flood_fill_flags,
+                # ))
                 floodmask = self._flood_mask[1:-1, 1:-1].copy()
         return floodmask
 
@@ -133,10 +150,38 @@ class SelectionWindow:
         if self.draw_rec:
             viz = cv.rectangle(viz, (self._ix, self._iy),(self._x, self._y), (255, 38, 0), 5)
         contours = _find_exterior_contours(self.mask)
+        # print("contours:", contours)
         viz = cv.drawContours(viz, contours, -1, color=(255,) * 3, thickness=-1)
         viz = cv.addWeighted(self.img, 0.75, viz, 0.25, 0)
         viz = cv.drawContours(viz, contours, -1, color=(255,) * 3, thickness=1)
+        f = open("output.txt", "w")
+        dic = dict()
+        for x in contours:
+            for xx in x:
+                for xxx in xx:
+                    # Center coordinates
+                    f.write(f"({xxx[0]}, {xxx[1]})\n")
+                    # print("Hello: ", xx)
+                    center_coordinates = (xxx[0], xxx[1])
 
+                    # if (xxx[0], xxx[1]) not in dic:
+                    #     dic[(xxx[0], xxx[1])] = 1
+                    # else:
+                    #     print("Duplicate:", (xxx[0], xxx[1]))
+                    
+                    # Radius of circle
+                    radius = 1
+                    
+                    # Blue color in BGR
+                    color = (255, 0, 0)
+                    
+                    # Line thickness of 2 px
+                    thickness = 1
+                    
+                    # Using cv2.circle() method
+                    # Draw a circle with blue line borders of thickness of 2 px
+                    viz = cv.circle(viz, center_coordinates, radius, color, thickness)
+        f.close()
 
         self.mean, self.stddev = cv.meanStdDev(self.img, mask=self.mask)
         meanstr = "mean=({:.2f}, {:.2f}, {:.2f})".format(*self.mean[:, 0])
