@@ -104,6 +104,7 @@ class Canvas(QtWidgets.QWidget):
         self.imageSelectionWindow = None
         self.labeling_image = False
         self.threshold_distance = 10
+        self.center = QtCore.QPointF(0, 0)
 
     def fillDrawing(self):
         return self._fill_drawing
@@ -423,7 +424,7 @@ class Canvas(QtWidgets.QWidget):
                         # print("current points:",self.current.points[0])
                         self.imageSelectionWindow._ix, self.imageSelectionWindow._iy = int(self.current.points[0].x()), int(self.current.points[0].y())
                         self.imageSelectionWindow._x, self.imageSelectionWindow._y = int(self.current.points[1].x()), int(self.current.points[1].y())
-                        # self.finalise()
+                        self.finalise()
                         self.labeling_image = False
                         self.mode = self.LABEL
                     elif self.createMode == "linestrip":
@@ -473,10 +474,69 @@ class Canvas(QtWidgets.QWidget):
                             )
                         # self.setEditing()
                     else:
+                        """
+                        update: threshold distance
+                        """
                         self.current = Shape(shape_type="polygon")
+                        d_vector = [pos.x() - self.center.x(), pos.y() - self.center.y()]
+                        refvec = [0, 1]
+
+                        """Define clockwise_sort()"""
+                        def clockwise_sort(point):
+                            vector = [point.x() - self.center.x(), point.y() - self.center.y()]
+                            len_vector = math.hypot(vector[0], vector[1])
+                            
+                            if len_vector == 0:
+                                return -math.pi, 0
+
+                            # Normalize vector: v/||v||
+                            normalized = [vector[0]/len_vector, vector[1]/len_vector]
+
+                            dotprod  = normalized[0] * refvec[0] + normalized[1] * refvec[1] # x1*x2 + y1*y2
+                            diffprod = refvec[1] * normalized[0] - refvec[0] * normalized[1] # x1*y2 - y1*x2
+                            angle = math.atan2(diffprod, dotprod) # angle = arctan2(y, x)
+
+                            if angle < 0:
+                                return 2*math.pi + angle, len_vector
+
+                            # first is the angle, but if two vectors have the same angle then 
+                            # the shorter distance should come first.
+                            return angle, len_vector
+                        
+                        if self.labeling_image:
+                            self.threshold_distance = math.hypot(d_vector[0], d_vector[1])/2
+                                
                         if int(ev.modifiers()) == QtCore.Qt.ShiftModifier:
                             temp = None
                             contours = self.imageSelectionWindow._shift_key(int(pos.x()), int(pos.y()))
+
+                            """Start:"""
+                            # Find the center point
+                            temp_x, temp_y = 0, 0
+                            for point in contours:
+                                temp_x += point.x()
+                                temp_y += point.y()
+                            temp_x, temp_y = temp_x/len(contours), temp_y/len(contours)
+
+                            self.center = QtCore.QPointF(temp_x, temp_y)
+
+                            # check the distance
+                            d = 0
+                            for point in contours:
+                                vector = [point.x() - self.center.x(), point.y() - self.center.y()]
+                                d += math.hypot(vector[0], vector[1])
+                            d = d/len(contours)
+
+                            # just keep the point having distance > d
+                            new_contours = []
+                            for point in contours:
+                                vector = [point.x() - self.center.x(), point.y() - self.center.y()]
+                                if math.hypot(vector[0], vector[1]) >= d:
+                                    new_contours += [point]
+
+                            contours = sorted(new_contours, key=clockwise_sort)
+                            """End"""
+
                             for points in contours:
                                 if points == contours[-1]:
                                     self.current.addPoint(points)
@@ -505,6 +565,33 @@ class Canvas(QtWidgets.QWidget):
                                 temp = None
                                 contours = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
                                 if len(contours) > 0:
+                                    """Start:"""
+                                    # Find the center point
+                                    temp_x, temp_y = 0, 0
+                                    for point in contours:
+                                        temp_x += point.x()
+                                        temp_y += point.y()
+                                    temp_x, temp_y = temp_x/len(contours), temp_y/len(contours)
+
+                                    self.center = QtCore.QPointF(temp_x, temp_y)
+
+                                    # check the distance
+                                    d = 0
+                                    for point in contours:
+                                        vector = [point.x() - self.center.x(), point.y() - self.center.y()]
+                                        d += math.hypot(vector[0], vector[1])
+                                    d = d/len(contours)
+
+                                    # just keep the point having distance > d
+                                    new_contours = []
+                                    for point in contours:
+                                        vector = [point.x() - self.center.x(), point.y() - self.center.y()]
+                                        if math.hypot(vector[0], vector[1]) >= d:
+                                            new_contours += [point]
+
+                                    contours = sorted(new_contours, key=clockwise_sort)
+                                    """End"""
+                                    
                                     for points in contours:
                                         if points == contours[-1]:
                                             self.current.addPoint(points)
