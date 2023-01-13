@@ -105,7 +105,8 @@ class Canvas(QtWidgets.QWidget):
         self.imageMagicWand = None
         self.imageSelectionWindow = None
         self.labeling_image = False
-        self.threshold_angle = 5
+        self.threshold_angle = 45
+        self.threshold_distance = 100
         self.center = QtCore.QPointF(0, 0)
 
     def fillDrawing(self):
@@ -437,7 +438,7 @@ class Canvas(QtWidgets.QWidget):
                         # print("current points:",self.current.points[0])
                         self.imageSelectionWindow._ix, self.imageSelectionWindow._iy = int(self.current.points[0].x()), int(self.current.points[0].y())
                         self.imageSelectionWindow._x, self.imageSelectionWindow._y = int(self.current.points[1].x()), int(self.current.points[1].y())
-                        # self.finalise()
+                        self.finalise()
                         self.labeling_image = False
                         self.mode = self.LABEL
                     elif self.createMode == "linestrip":
@@ -555,19 +556,17 @@ class Canvas(QtWidgets.QWidget):
                                 # if point == contours[-1]:
                                 #     self.current.addPoint(point)
                                 if temp:
-                                    if self.angle_between_points(temp, point) > self.threshold_angle:
-                                        if i >= 3 and len(self.current.points) >= 2:
-                                            diff_1 = QtCore.QPointF(point.x()-self.current.points[-1].x(), point.y()-self.current.points[-1].y())
-                                            diff_2 = QtCore.QPointF(self.current.points[-2].x()-self.current.points[-1].x(), self.current.points[-2].y()-self.current.points[-1].y())
-                                            if self.angle_between_points(diff_1, diff_2) > self.threshold_angle:
-                                                self.current.addPoint(point)
-                                                temp = point
-                                        elif len(self.current.points) < 2:
+                                    if i >= 3 and len(self.current.points) >= 2:
+                                        diff_1 = QtCore.QPointF(point.x()-self.current.points[-1].x(), point.y()-self.current.points[-1].y())
+                                        diff_2 = QtCore.QPointF(self.current.points[-2].x()-self.current.points[-1].x(), self.current.points[-2].y()-self.current.points[-1].y())
+                                        if self.angle_between_points(diff_1, diff_2) > self.threshold_angle and \
+                                            self.distance_between_points(temp, point) > self.threshold_distance:
                                             self.current.addPoint(point)
-                                else:
-                                    temp = point
+                                    elif len(self.current.points) < 2:
+                                        self.current.addPoint(point)
+                                temp = point
                             
-                            if len(self.current.points) > 1:
+                            if len(self.current.points) > 0:
                                 self.current.addPoint(self.current.points[0])
 
                             self.labeling_image = True
@@ -575,6 +574,7 @@ class Canvas(QtWidgets.QWidget):
                             if self.current.isClosed():
                                 # print("Close!")
                                 self.update()
+                                print("points:", self.current.points)
                         elif int(ev.modifiers()) == QtCore.Qt.AltModifier:
                             if self.labeling_image == False:
                                 msg = self.tr(
@@ -629,17 +629,16 @@ class Canvas(QtWidgets.QWidget):
                                     
                                     for i, point in enumerate(contours):
                                         if temp:
-                                            if self.angle_between_points(temp, point) > self.threshold_angle:
-                                                if i >= 3 and len(self.current.points) >= 2:
-                                                    diff_1 = QtCore.QPointF(point.x()-self.current.points[-1].x(), point.y()-self.current.points[-1].y())
-                                                    diff_2 = QtCore.QPointF(self.current.points[-2].x()-self.current.points[-1].x(), self.current.points[-2].y()-self.current.points[-1].y())
-                                                    if self.angle_between_points(diff_1, diff_2) > self.threshold_angle:
-                                                        self.current.addPoint(point)
-                                                        temp = point
-                                                elif len(self.current.points) < 2:
+                                            if i >= 3 and len(self.current.points) >= 2:
+                                                diff_1 = QtCore.QPointF(point.x()-self.current.points[-1].x(), point.y()-self.current.points[-1].y())
+                                                diff_2 = QtCore.QPointF(self.current.points[-2].x()-self.current.points[-1].x(), self.current.points[-2].y()-self.current.points[-1].y())
+                                                if self.angle_between_points(diff_1, diff_2) > self.threshold_angle and \
+                                                        self.distance_between_points(temp, point) > self.threshold_distance:
                                                     self.current.addPoint(point)
-                                        else:
-                                            temp = point
+                                                temp = point
+                                            elif len(self.current.points) < 2:
+                                                self.current.addPoint(point)
+                                        temp = point
                                     
                                     if len(self.current.points) > 1:
                                         self.current.addPoint(self.current.points[0])
