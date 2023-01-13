@@ -592,7 +592,7 @@ class Canvas(QtWidgets.QWidget):
                                     
                                     """
                                     only keep the points
-                                    having angle <= 90
+                                    having angle <= 45
                                     """
                                     new_contours = []
                                     diff_1 = QtCore.QPointF(self.center.x()-pos.x(), self.center.y()-pos.y())
