@@ -438,7 +438,7 @@ class Canvas(QtWidgets.QWidget):
                         # print("current points:",self.current.points[0])
                         self.imageSelectionWindow._ix, self.imageSelectionWindow._iy = int(self.current.points[0].x()), int(self.current.points[0].y())
                         self.imageSelectionWindow._x, self.imageSelectionWindow._y = int(self.current.points[1].x()), int(self.current.points[1].y())
-                        self.finalise()
+                        # self.finalise()
                         self.labeling_image = False
                         self.mode = self.LABEL
                     elif self.createMode == "linestrip":
