@@ -105,8 +105,7 @@ class Canvas(QtWidgets.QWidget):
         self.imageMagicWand = None
         self.imageSelectionWindow = None
         self.labeling_image = False
-        self.threshold_distance = 20
-        self.threshold_angle = 2
+        self.threshold_angle = 5
         self.center = QtCore.QPointF(0, 0)
 
     def fillDrawing(self):
@@ -397,8 +396,8 @@ class Canvas(QtWidgets.QWidget):
         vector_1 = [point_1.x(), point_1.y()]
         vector_2 = [point_2.x(), point_2.y()]
 
-        unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
-        unit_vector_2 = vector_2 / np.linalg.norm(vector_2)
+        unit_vector_1 = vector_1 / (np.linalg.norm(vector_1)+0.001)
+        unit_vector_2 = vector_2 / (np.linalg.norm(vector_2)+0.001)
         dot_product = np.dot(unit_vector_1, unit_vector_2)
         angle = np.arccos(np.clip(dot_product, -1.0, 1.0))
 
@@ -552,17 +551,25 @@ class Canvas(QtWidgets.QWidget):
                             # contours = sorted(contours, key=clockwise_sort)
                             """End"""
 
-                            for points in contours:
-                                if points == contours[-1]:
-                                    self.current.addPoint(points)
-                                elif temp:
-                                    if self.angle_between_points(temp, points) > self.threshold_angle and \
-                                    self.distance_between_points(temp, points) > self.threshold_distance:
-                                        self.current.addPoint(points)
-                                        temp = points
+                            for i, point in enumerate(contours):
+                                # if point == contours[-1]:
+                                #     self.current.addPoint(point)
+                                if temp:
+                                    if self.angle_between_points(temp, point) > self.threshold_angle:
+                                        if i >= 3 and len(self.current.points) >= 2:
+                                            diff_1 = QtCore.QPointF(point.x()-self.current.points[-1].x(), point.y()-self.current.points[-1].y())
+                                            diff_2 = QtCore.QPointF(self.current.points[-2].x()-self.current.points[-1].x(), self.current.points[-2].y()-self.current.points[-1].y())
+                                            if self.angle_between_points(diff_1, diff_2) > self.threshold_angle:
+                                                self.current.addPoint(point)
+                                                temp = point
+                                        elif len(self.current.points) < 2:
+                                            self.current.addPoint(point)
                                 else:
-                                    temp = points
-                            self.current.addPoint(self.current.points[0])
+                                    temp = point
+                            
+                            if len(self.current.points) > 1:
+                                self.current.addPoint(self.current.points[0])
+
                             self.labeling_image = True
 
                             if self.current.isClosed():
@@ -620,18 +627,22 @@ class Canvas(QtWidgets.QWidget):
                                     contours = sorted(new_contours, key=clockwise_sort)
                                     """End"""
                                     
-                                    for points in contours:
-                                        if points == contours[-1]:
-                                            self.current.addPoint(points)
-                                        elif temp:
-                                            if self.angle_between_points(temp, points) > self.threshold_angle and \
-                                            self.distance_between_points(temp, points) > self.threshold_distance:
-                                                self.current.addPoint(points)
-                                                temp = points
+                                    for i, point in enumerate(contours):
+                                        if temp:
+                                            if self.angle_between_points(temp, point) > self.threshold_angle:
+                                                if i >= 3 and len(self.current.points) >= 2:
+                                                    diff_1 = QtCore.QPointF(point.x()-self.current.points[-1].x(), point.y()-self.current.points[-1].y())
+                                                    diff_2 = QtCore.QPointF(self.current.points[-2].x()-self.current.points[-1].x(), self.current.points[-2].y()-self.current.points[-1].y())
+                                                    if self.angle_between_points(diff_1, diff_2) > self.threshold_angle:
+                                                        self.current.addPoint(point)
+                                                        temp = point
+                                                elif len(self.current.points) < 2:
+                                                    self.current.addPoint(point)
                                         else:
-                                            temp = points
-
-                                    self.current.addPoint(self.current.points[0])
+                                            temp = point
+                                    
+                                    if len(self.current.points) > 1:
+                                        self.current.addPoint(self.current.points[0])
 
                                     if self.current.isClosed():
                                         # print("Close!")
