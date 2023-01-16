@@ -1,3 +1,4 @@
+import math
 import cv2
 import numpy as np
 from qtpy import QtCore
@@ -30,34 +31,24 @@ def check_intersection(start_point, end_point, check_point):
 
 class SelectionWindow:
     def __init__(self, img, connectivity=4, tolerance=32):
-        # self.name = name
         h, w = img.shape[:2]
         self.img = img
-        # print("img:", self.img.shape)
         self.img_copy = img.copy()
         self.rectangle = img
-        # print("original rectangle:", self.rectangle.shape)
-        # self.draw_rec = False
         self.mask = np.zeros((h, w), dtype=np.uint8)
         self._flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
         self._x = w
         self._y = h
         self._ix = 0
         self._iy = 0
+
+        self.threshold_distance = 50
+        self.threshold_angle = 20
         
         self._flood_fill_flags = (
             connectivity | cv2.FLOODFILL_FIXED_RANGE | cv2.FLOODFILL_MASK_ONLY | 255 << 8
         )  # 255 << 8 tells to fill with the value 255
-        # cv.namedWindow(self.name)
         self.tolerance = (tolerance,) * 3
-        # cv.createTrackbar(
-        #     "Tolerance", self.name, tolerance, 255, self._trackbar_callback
-        # )
-        # cv.setMouseCallback(self.name, self._mouse_callback)
-
-
-    # def _trackbar_callback(self, pos):
-    #     self.tolerance = (pos,) * 3
 
     
     def _reset_slidewindow(self):
@@ -67,53 +58,13 @@ class SelectionWindow:
         self._iy = 0
         self.mask = np.zeros((self._y, self._x), dtype=np.uint8)
         self._flood_mask = np.zeros((self._y + 2, self._x + 2), dtype=np.uint8)
-
-
-    # def _mouse_callback(self, event, x, y, flags, *userdata):
-    #     # if event != cv.EVENT_LBUTTONDOWN:
-    #     #     return
-    #     start_point = (self._ix, self._iy)
-    #     end_point = (self._x, self._y)
-    #     check_point = (x,y)
-    #     modifier = flags & (CTRL_KEY + ALT_KEY + SHIFT_KEY)
-    #     if modifier == 0 and event == cv.EVENT_LBUTTONDOWN:
-    #         if check_intersection(start_point, end_point, check_point) == False:
-    #             self.draw_rec = False
-    #             self.rectangle = self.img_copy.copy()
-    #             self._y, self._x = self.img.shape[:2]
-    #             self._ix = 0
-    #             self._iy = 0
-    #             self.mask = np.zeros((self._y, self._x), dtype=np.uint8)
-    #             self._flood_mask = np.zeros((self._y + 2, self._x + 2), dtype=np.uint8)
-    #     if modifier == CTRL_KEY:
-    #         if event == cv.EVENT_LBUTTONDOWN:
-    #             self.mask = np.zeros((self._y, self._x), dtype=np.uint8)
-    #             self._flood_mask = np.zeros((self._y + 2, self._x + 2), dtype=np.uint8)
-    #             self._ix = x
-    #             self._iy = y
-    #         elif event == cv.EVENT_LBUTTONUP:
-    #             self.draw_rec = True
-    #             self._x = x
-    #             self._y = y
-    #             self.rectangle = cv.rectangle(self.img_copy.copy(), (self._ix, self._iy),(self._x, self._y), (255, 38, 0), 1)
-    #     elif modifier == (ALT_KEY + SHIFT_KEY):
-    #         floodmask = self._floodfill(event, x, y)
-    #         self.mask = cv.bitwise_and(self.mask, floodmask)
-    #     elif modifier == SHIFT_KEY:
-    #         floodmask = self._floodfill(event, x, y)
-    #         self.mask = cv.bitwise_or(self.mask, floodmask)
-    #     elif modifier == ALT_KEY:
-    #         floodmask = self._floodfill(event, x, y)
-    #         self.mask = cv.bitwise_and(self.mask, cv.bitwise_not(floodmask))
-
-    #     self._update()
     
 
     def _shift_key(self, x, y):
         self.rectangle = cv2.rectangle(self.img_copy.copy(), (self._ix, self._iy), (self._x, self._y), (255, 38, 0), 1)
         floodmask = self._floodfill(x, y)
         self.mask = cv2.bitwise_or(self.mask, floodmask)
-
+        
         return self._contours()
     
 
@@ -122,7 +73,9 @@ class SelectionWindow:
         floodmask = self._floodfill(x, y)
         self.mask = cv2.bitwise_and(self.mask, cv2.bitwise_not(floodmask))
 
-        return self._contours()
+        pos = QtCore.QPointF(x, y)
+
+        return self._contours(pos)
 
 
     def _floodfill(self, x, y):
@@ -140,15 +93,115 @@ class SelectionWindow:
         floodmask = self._flood_mask[1:-1, 1:-1].copy()
         return floodmask
 
+    
+    def distance_between_points(self, point_1, point_2):
+        vector = [point_2.x()-point_1.x(), point_2.y()-point_1.y()]
+        return math.hypot(vector[0], vector[1])
 
-    def _contours(self):
+
+    def angle_between_points(self, point_1, point_2):
+        vector_1 = [point_1.x(), point_1.y()]
+        vector_2 = [point_2.x(), point_2.y()]
+
+        unit_vector_1 = vector_1 / (np.linalg.norm(vector_1) + 0.001)
+        unit_vector_2 = vector_2 / (np.linalg.norm(vector_2) + 0.001)
+        dot_product = np.dot(unit_vector_1, unit_vector_2)
+        angle = np.arccos(np.clip(dot_product, -1.0, 1.0))
+
+        return angle * 180 / math.pi
+    
+
+    def sort_contours(self, contours, center):
+        refvec = [0, 1]
+        
+        def clockwise_sort(point):
+            vector = [point.x() - center.x(), point.y() - center.y()]
+            len_vector = self.distance_between_points(center, point)
+            
+            if len_vector == 0:
+                return -math.pi, 0
+
+            # Normalize vector: v/||v||
+            normalized = [vector[0]/len_vector, vector[1]/len_vector]
+
+            dotprod  = normalized[0] * refvec[0] + normalized[1] * refvec[1] # x1*x2 + y1*y2
+            diffprod = refvec[1] * normalized[0] - refvec[0] * normalized[1] # x1*y2 - y1*x2
+            angle = math.atan2(diffprod, dotprod) # angle = arctan2(y, x)
+
+            if angle < 0:
+                return 2*math.pi + angle, len_vector
+
+            # first is the angle, but if two vectors have the same angle then 
+            # the shorter distance should come first.
+            return angle, len_vector
+
+        return sorted(contours, key=clockwise_sort)
+
+
+    def _contours(self, pos=None):
         ret = _find_exterior_contours(self.mask)
 
         contours = []
+        temp_x, temp_y = 0, 0
 
         for x in ret:
             for xx in x:
                 for xxx in xx:
                     contours += [QtCore.QPointF(xxx[0], xxx[1])]
+                    temp_x += xxx[0]
+                    temp_y += xxx[1]
         
-        return contours
+        # calculate coordinates of "center" point
+        temp_x, temp_y = temp_x/len(contours), temp_y/len(contours)
+        center = QtCore.QPointF(temp_x, temp_y)
+
+        # calculate the average distance of all points from "center" point
+        d = 0
+        for point in contours:
+            vector = [point.x() - center.x(), point.y() - center.y()]
+            d += math.hypot(vector[0], vector[1])
+        d = d/len(contours)
+
+        # just keep the point having distance > d from center
+        temp_contours = []
+        for point in contours:
+            vector = [point.x() - center.x(), point.y() - center.y()]
+            if math.hypot(vector[0], vector[1]) >= d:
+                temp_contours += [point]
+        contours = temp_contours
+
+        """
+        In case: Alt + Left button
+        Description: Delete points
+        """
+        if pos:
+            temp_contours = []
+            diff_1 = QtCore.QPointF(center.x()-pos.x(), center.y()-pos.y())
+            for point in contours:
+                diff_2 = QtCore.QPointF(point.x()-pos.x(), point.y()-pos.y())
+                if self.angle_between_points(diff_1, diff_2) <= 45:
+                    temp_contours += [point]
+            contours = temp_contours
+        """
+        End case.
+        """
+
+        contours = self.sort_contours(contours, center)
+
+        current_contours = []
+        temp = None
+        
+        for i, point in enumerate(contours):
+            if temp:
+                if i >= 3 and len(current_contours) >= 2:
+                    diff_1 = QtCore.QPointF(point.x()-current_contours[-1].x(), point.y()-current_contours[-1].y())
+                    diff_2 = QtCore.QPointF(current_contours[-2].x()-current_contours[-1].x(), \
+                        current_contours[-2].y()-current_contours[-1].y())
+                    if self.angle_between_points(diff_1, diff_2) > self.threshold_angle and \
+                        self.distance_between_points(temp, point) > self.threshold_distance:
+                        current_contours += [point]
+                elif len(current_contours) < 2:
+                    current_contours += [point]
+            temp = point
+        
+        return current_contours
