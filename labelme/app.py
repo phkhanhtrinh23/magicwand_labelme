@@ -1502,6 +1502,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def loadFile(self, filename=None):
         """Load the specified file, or the last opened file if None."""
         # changing fileListWidget loads file
+
+        self.canvas.imageFilename = filename
         self.canvas.imageMagicWand = cv2.imread(filename)
         self.canvas.imageSelectionWindow = SelectionWindow(self.canvas.imageMagicWand)
         if filename in self.imageList and (

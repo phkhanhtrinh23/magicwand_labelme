@@ -1,0 +1,72 @@
+{
+	"info": {
+		"_postman_id": "d50cdf63-a50e-4e45-9c82-04b3e3b82956",
+		"name": "SIA_LabelTool",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "http://202.191.58.201/get_main_object",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "image",
+							"type": "file",
+							"src": "/home/thanhdat/projects/ImageSegmentation/data/images/9FABF64D-6F7E-45BE-B133-919111F9D0E3.jpeg"
+						},
+						{
+							"key": "x1",
+							"value": "0",
+							"type": "text"
+						},
+						{
+							"key": "y1",
+							"value": "0",
+							"type": "text"
+						},
+						{
+							"key": "x2",
+							"value": "300",
+							"type": "text"
+						},
+						{
+							"key": "y2",
+							"value": "400",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://202.191.58.201/get_main_object",
+					"protocol": "http",
+					"host": [
+						"202",
+						"191",
+						"58",
+						"201"
+					],
+					"path": [
+						"get_main_object"
+					],
+					"query": [
+						{
+							"key": "text",
+							"value": "hello",
+							"disabled": true
+						},
+						{
+							"key": "sender",
+							"value": "user",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

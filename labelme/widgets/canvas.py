@@ -1,7 +1,12 @@
+import json
 import math
+import os
 import random
+import cv2
+import shapely
 
 import numpy as np
+import requests
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtWidgets
@@ -102,9 +107,12 @@ class Canvas(QtWidgets.QWidget):
         # Set widget options.
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.WheelFocus)
+        self.imageFilename = None
         self.imageMagicWand = None
         self.imageSelectionWindow = None
         self.labeling_image = False
+        self.api_points = None
+        self.center = None
 
     def fillDrawing(self):
         return self._fill_drawing
@@ -385,6 +393,36 @@ class Canvas(QtWidgets.QWidget):
             (check_point[0] <= end_point[0] and check_point[1] <= end_point[1]):
             return True
         return False
+    
+    def distance_between_points(self, point_1, point_2):
+        vector = [point_2[0]-point_1[0], point_2[1]-point_1[1]]
+        return math.hypot(vector[0], vector[1])
+
+    def sort_contours(self, contours, center):
+        refvec = [0, 1]
+        
+        def clockwise_sort(point):
+            vector = [point[0] - center[0], point[1] - center[1]]
+            len_vector = self.distance_between_points(center, point)
+            
+            if len_vector == 0:
+                return -math.pi, 0
+
+            # Normalize vector: v/||v||
+            normalized = [vector[0]/len_vector, vector[1]/len_vector]
+
+            dotprod  = normalized[0] * refvec[0] + normalized[1] * refvec[1] # x1*x2 + y1*y2
+            diffprod = refvec[1] * normalized[0] - refvec[0] * normalized[1] # x1*y2 - y1*x2
+            angle = math.atan2(diffprod, dotprod) # angle = arctan2(y, x)
+
+            if angle < 0:
+                return 2*math.pi + angle, len_vector
+
+            # first is the angle, but if two vectors have the same angle then 
+            # the shorter distance should come first.
+            return angle, len_vector
+
+        return sorted(contours, key=clockwise_sort)
 
     def mousePressEvent(self, ev):
         if QT5:
@@ -420,8 +458,20 @@ class Canvas(QtWidgets.QWidget):
                         # print("current points:",self.current.points[0])
                         self.imageSelectionWindow._ix, self.imageSelectionWindow._iy = int(self.current.points[0].x()), int(self.current.points[0].y())
                         self.imageSelectionWindow._x, self.imageSelectionWindow._y = int(self.current.points[1].x()), int(self.current.points[1].y())
-                        self.finalise()
-                        self.labeling_image = False
+                        # self.finalise()
+                        
+                        # * HANDLE API *
+                        extension = os.path.splitext(self.imageFilename)[1]
+                        img_encode = cv2.imencode(extension, self.imageMagicWand)
+                        url = 'http://202.191.58.201/get_main_object'
+                        file = {'image': (self.imageFilename, img_encode[1])}
+                        form_data = {'x1': self.current.points[0].x(), 
+                                    'y1': self.current.points[0].y(), 
+                                    'x2': self.current.points[1].x(), 
+                                    'y2': self.current.points[1].y()}
+                        data = requests.post(url, files=file, data=form_data)
+                        self.api_points = json.loads(data.content.decode("utf-8"))["points"]
+
                         self.mode = self.LABEL
                     elif self.createMode == "linestrip":
                         self.current.addPoint(self.line[1])
@@ -432,6 +482,8 @@ class Canvas(QtWidgets.QWidget):
                     # Create new shape.
                     if self.createMode == "box":
                         self.current = Shape(shape_type="rectangle")
+                        self.labeling_image = False
+                        self.api_points = None
                     else:
                         self.current = Shape(shape_type=self.createMode)
                     self.current.addPoint(pos)
@@ -448,63 +500,98 @@ class Canvas(QtWidgets.QWidget):
                 start_point = (self.imageSelectionWindow._ix, self.imageSelectionWindow._iy)
                 end_point = (self.imageSelectionWindow._x, self.imageSelectionWindow._y)
                 check_point = (pos.x(), pos.y())
-                if self.createMode == "box":
-                    if self.check_intersection(start_point, end_point, check_point) == False:
+                
+                if self.check_intersection(start_point, end_point, check_point) == False:
+                    if self.labeling_image == False:
+                        msg = self.tr(
+                            "Please click inside the box! If you want to "
+                            "Detele the box, remember to choose Edit Polygons " 
+                            "on the left-hand side."
+                        )
+                        QtWidgets.QMessageBox.warning(
+                            self, self.tr("Attention"), msg
+                        )
+                    elif self.current:
+                        self.finalise()
+                    else:
+                        msg = self.tr(
+                            "Empty shape. Please label the shape!"
+                        )
+                        QtWidgets.QMessageBox.warning(
+                            self, self.tr("Attention"), msg
+                        )
+                    # self.setEditing()
+                else:
+                    self.current = Shape(shape_type="polygon")
+                    
+                    if self.api_points and self.labeling_image == False:
+                        new_api_points = []
+                        temp_x, temp_y = 0, 0
+                        for point in self.api_points:
+                            self.current.addPoint(QtCore.QPointF(self.imageSelectionWindow._ix + point[0], self.imageSelectionWindow._iy + point[1]))
+                            new_api_points += [[self.imageSelectionWindow._ix + point[0], self.imageSelectionWindow._iy + point[1]]]
+                            temp_x += self.current.points[-1].x()
+                            temp_y += self.current.points[-1].y()
+                        self.center = [temp_x/len(self.api_points), temp_y/len(self.api_points)]
+                        self.api_points = new_api_points
+                        
+                        if len(self.current.points) >= 3:
+                            self.current.addPoint(self.current.points[0])
+
+                        if self.current.isClosed():
+                            # print("Close!")
+                            self.update()
+                            
+                        self.labeling_image = True
+                            
+                    if int(ev.modifiers()) == QtCore.Qt.ShiftModifier:
+                        if self.api_points:
+                            list_of_points = self.imageSelectionWindow._shift_key(int(pos.x()), int(pos.y()))
+                            current_polygon = shapely.geometry.Polygon(self.api_points)
+                            new_points = []
+                            
+                            for point in list_of_points:
+                                line = shapely.geometry.LineString([[self.center[0], self.center[1]], [point.x(), point.y()]])
+                                if line.intersects(current_polygon):
+                                    new_points += [[point.x(), point.y()]]
+                        
+                            current_contours = self.sort_contours(self.api_points + new_points, self.center)
+
+                            for point in current_contours:
+                                self.current.addPoint(QtCore.QPointF(point[0], point[1]))
+                        else:
+                            self.current.points = self.imageSelectionWindow._shift_key(int(pos.x()), int(pos.y()))
+                        
+                        if len(self.current.points) >= 3:
+                            self.current.addPoint(self.current.points[0])
+
+                        if self.current.isClosed():
+                            # print("Close!")
+                            self.update()
+
+                        self.labeling_image = True
+
+                        if self.current.isClosed():
+                            # print("Close!")
+                            self.update()
+
+                    elif int(ev.modifiers()) == QtCore.Qt.AltModifier:
                         if self.labeling_image == False:
                             msg = self.tr(
-                                "Please click inside the box! If you want to "
-                                "Detele the box, remember to choose Edit Polygons " 
-                                "on the left-hand side."
+                                "Please fill before delete."
                             )
                             QtWidgets.QMessageBox.warning(
                                 self, self.tr("Attention"), msg
                             )
-                        elif self.current:
-                            self.finalise()
                         else:
-                            msg = self.tr(
-                                "Empty shape. Please label the shape!"
-                            )
-                            QtWidgets.QMessageBox.warning(
-                                self, self.tr("Attention"), msg
-                            )
-                        # self.setEditing()
-                    else:
-                        self.current = Shape(shape_type="polygon")
+                            self.current.points = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
                                 
-                        if int(ev.modifiers()) == QtCore.Qt.ShiftModifier:
-                            self.current.points = self.imageSelectionWindow._shift_key(int(pos.x()), int(pos.y()))
-                            
                             if len(self.current.points) >= 3:
                                 self.current.addPoint(self.current.points[0])
 
                             if self.current.isClosed():
                                 # print("Close!")
                                 self.update()
-
-                            self.labeling_image = True
-
-                            if self.current.isClosed():
-                                # print("Close!")
-                                self.update()
-
-                        elif int(ev.modifiers()) == QtCore.Qt.AltModifier:
-                            if self.labeling_image == False:
-                                msg = self.tr(
-                                    "Please fill before delete."
-                                )
-                                QtWidgets.QMessageBox.warning(
-                                    self, self.tr("Attention"), msg
-                                )
-                            else:
-                                self.current.points = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
-                                    
-                                if len(self.current.points) >= 3:
-                                    self.current.addPoint(self.current.points[0])
-
-                                if self.current.isClosed():
-                                    # print("Close!")
-                                    self.update()
 
             elif self.editing():
                 if self.selectedEdge():
