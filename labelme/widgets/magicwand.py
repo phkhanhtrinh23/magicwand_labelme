@@ -151,57 +151,62 @@ class SelectionWindow:
                     temp_x += xxx[0]
                     temp_y += xxx[1]
         
-        # calculate coordinates of "center" point
-        temp_x, temp_y = temp_x/len(contours), temp_y/len(contours)
-        center = QtCore.QPointF(temp_x, temp_y)
+        if len(contours) > 0:
+        
+            # calculate coordinates of "center" point
+            temp_x, temp_y = temp_x/len(contours), temp_y/len(contours)
+            center = QtCore.QPointF(temp_x, temp_y)
 
-        # calculate the average distance of all points from "center" point
-        d = 0
-        for point in contours:
-            vector = [point.x() - center.x(), point.y() - center.y()]
-            d += math.hypot(vector[0], vector[1])
-        d = d/len(contours)
-
-        # just keep the point having distance > d from center
-        temp_contours = []
-        for point in contours:
-            vector = [point.x() - center.x(), point.y() - center.y()]
-            if math.hypot(vector[0], vector[1]) >= d:
-                temp_contours += [point]
-        contours = temp_contours
-
-        """
-        In case: Alt + Left button
-        Description: Delete points
-        """
-        if pos:
-            temp_contours = []
-            diff_1 = QtCore.QPointF(center.x()-pos.x(), center.y()-pos.y())
+            # calculate the average distance of all points from "center" point
+            d = 0
             for point in contours:
-                diff_2 = QtCore.QPointF(point.x()-pos.x(), point.y()-pos.y())
-                if self.angle_between_points(diff_1, diff_2) <= 45:
+                vector = [point.x() - center.x(), point.y() - center.y()]
+                d += math.hypot(vector[0], vector[1])
+            d = d/len(contours)
+
+            # just keep the point having distance > d from center
+            temp_contours = []
+            for point in contours:
+                vector = [point.x() - center.x(), point.y() - center.y()]
+                if math.hypot(vector[0], vector[1]) >= d:
                     temp_contours += [point]
             contours = temp_contours
-        """
-        End case.
-        """
 
-        contours = self.sort_contours(contours, center)
+            """
+            In case: Alt + Left button
+            Description: Delete points
+            """
+            if pos:
+                temp_contours = []
+                diff_1 = QtCore.QPointF(center.x()-pos.x(), center.y()-pos.y())
+                for point in contours:
+                    diff_2 = QtCore.QPointF(point.x()-pos.x(), point.y()-pos.y())
+                    if self.angle_between_points(diff_1, diff_2) <= 45:
+                        temp_contours += [point]
+                contours = temp_contours
+            """
+            End case.
+            """
 
-        current_contours = []
-        temp = None
-        
-        for i, point in enumerate(contours):
-            if temp:
-                if i >= 3 and len(current_contours) >= 2:
-                    diff_1 = QtCore.QPointF(point.x()-current_contours[-1].x(), point.y()-current_contours[-1].y())
-                    diff_2 = QtCore.QPointF(current_contours[-2].x()-current_contours[-1].x(), \
-                        current_contours[-2].y()-current_contours[-1].y())
-                    if self.angle_between_points(diff_1, diff_2) > self.threshold_angle and \
-                        self.distance_between_points(temp, point) > self.threshold_distance:
+            contours = self.sort_contours(contours, center)
+
+            current_contours = []
+            temp = None
+            
+            for i, point in enumerate(contours):
+                if temp:
+                    if i >= 3 and len(current_contours) >= 2:
+                        diff_1 = QtCore.QPointF(point.x()-current_contours[-1].x(), point.y()-current_contours[-1].y())
+                        diff_2 = QtCore.QPointF(current_contours[-2].x()-current_contours[-1].x(), \
+                            current_contours[-2].y()-current_contours[-1].y())
+                        if self.angle_between_points(diff_1, diff_2) > self.threshold_angle and \
+                            self.distance_between_points(temp, point) > self.threshold_distance:
+                            current_contours += [point]
+                    elif len(current_contours) < 2:
                         current_contours += [point]
-                elif len(current_contours) < 2:
-                    current_contours += [point]
-            temp = point
+                temp = point
+            
+            return current_contours
         
-        return current_contours
+        else:
+            return contours

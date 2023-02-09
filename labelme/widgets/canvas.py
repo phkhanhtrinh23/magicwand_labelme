@@ -525,15 +525,15 @@ class Canvas(QtWidgets.QWidget):
                     self.current = Shape(shape_type="polygon")
                     
                     if self.api_points and self.labeling_image == False:
-                        new_api_points = []
+                        # new_api_points = []
                         temp_x, temp_y = 0, 0
                         for point in self.api_points:
-                            self.current.addPoint(QtCore.QPointF(self.imageSelectionWindow._ix + point[0], self.imageSelectionWindow._iy + point[1]))
-                            new_api_points += [[self.imageSelectionWindow._ix + point[0], self.imageSelectionWindow._iy + point[1]]]
+                            self.current.addPoint(QtCore.QPointF(point[0], point[1]))
+                            # new_api_points += [[self.imageSelectionWindow._ix + point[0], self.imageSelectionWindow._iy + point[1]]]
                             temp_x += self.current.points[-1].x()
                             temp_y += self.current.points[-1].y()
                         self.center = [temp_x/len(self.api_points), temp_y/len(self.api_points)]
-                        self.api_points = new_api_points
+                        # self.api_points = new_api_points
                         
                         if len(self.current.points) >= 3:
                             self.current.addPoint(self.current.points[0])
@@ -584,8 +584,23 @@ class Canvas(QtWidgets.QWidget):
                                 self, self.tr("Attention"), msg
                             )
                         else:
-                            self.current.points = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
+                            if self.api_points:
+                                list_of_points = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
+                                current_polygon = shapely.geometry.Polygon(self.api_points)
+                                new_points = []
                                 
+                                for point in list_of_points:
+                                    line = shapely.geometry.LineString([[self.center[0], self.center[1]], [point.x(), point.y()]])
+                                    if not line.intersects(current_polygon):
+                                        new_points += [[point.x(), point.y()]]
+                            
+                                current_contours = self.sort_contours(self.api_points + new_points, self.center)
+
+                                for point in current_contours:
+                                    self.current.addPoint(QtCore.QPointF(point[0], point[1]))
+                            else:
+                                self.current.points = self.imageSelectionWindow._alt_key(int(pos.x()), int(pos.y()))
+                            
                             if len(self.current.points) >= 3:
                                 self.current.addPoint(self.current.points[0])
 
